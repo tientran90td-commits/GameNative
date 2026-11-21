@@ -6,57 +6,67 @@ import android.net.Uri
 import android.os.Build
 import androidx.core.content.FileProvider
 import app.gamenative.BuildConfig
-import app.gamenative.service.SteamService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import timber.log.Timber
 import java.io.File
+import java.util.concurrent.TimeUnit
 
+/**
+ * Tải file APK từ GitHub Releases của bạn rồi mở màn hình cài đặt của Android.
+ */
 object UpdateInstaller {
+    private val httpClient = OkHttpClient.Builder()
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(60, TimeUnit.SECONDS)
+        .build()
+
     suspend fun downloadAndInstall(
         context: Context,
         downloadUrl: String,
         versionName: String,
-        onProgress: (Float) -> Unit
+        onProgress: (Float) -> Unit,
     ): Boolean = withContext(Dispatchers.IO) {
         try {
-            val apkFileName = "gamenative-v$versionName.apk"
-            val destFile = File(context.cacheDir, apkFileName)
+            val safeName = versionName.replace(Regex("[^A-Za-z0-9._-]"), "_")
+            val destFile = File(context.cacheDir, "update-$safeName.apk")
+            if (destFile.exists()) destFile.delete()
 
-            // Extract filename from URL for fetchFileWithFallback
-            // The URL should be like: https://downloads.gamenative.app/gamenative-v0.5.3.apk
-            val fileName = downloadUrl.substringAfterLast("https://downloads.gamenative.app/")
-
-            Timber.i("Downloading update: $fileName from URL: $downloadUrl")
-            Timber.i("Saving to: ${destFile.absolutePath}")
-
-            // Use the existing fetchFileWithFallback method which handles fallback URLs
-            SteamService.fetchFileWithFallback(
-                fileName = fileName,
-                dest = destFile,
-                context = context,
-                onProgress = onProgress
-            )
-
-            // Verify the file exists and has content
-            if (!destFile.exists()) {
-                Timber.e("Downloaded file does not exist: ${destFile.absolutePath}")
-                return@withContext false
+            Timber.i("Downloading update from $downloadUrl")
+            val request = Request.Builder().url(downloadUrl).build()
+            httpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    Timber.e("Download failed: HTTP ${response.code}")
+                    return@withContext false
+                }
+                val body = response.body ?: return@withContext false
+                val total = body.contentLength()
+                var downloaded = 0L
+                body.byteStream().use { input ->
+                    destFile.outputStream().use { output ->
+                        val buffer = ByteArray(64 * 1024)
+                        while (true) {
+                            val read = input.read(buffer)
+                            if (read < 0) break
+                            output.write(buffer, 0, read)
+                            downloaded += read
+                            if (total > 0) onProgress(downloaded.toFloat() / total.toFloat())
+                        }
+                    }
+                }
             }
 
-            val fileSize = destFile.length()
-            if (fileSize == 0L) {
-                Timber.e("Downloaded file is empty: ${destFile.absolutePath}")
+            if (!destFile.exists() || destFile.length() == 0L) {
+                Timber.e("Downloaded file is missing or empty")
                 return@withContext false
             }
+            Timber.i("Download complete: ${destFile.length()} bytes")
 
-            Timber.i("Download complete: ${destFile.absolutePath}, size: $fileSize bytes")
-
-            // Install the APK
             withContext(Dispatchers.Main) {
                 installApk(context, destFile)
             }
-
             return@withContext true
         } catch (e: Exception) {
             Timber.e(e, "Error downloading/installing update")
@@ -66,34 +76,15 @@ object UpdateInstaller {
 
     private fun installApk(context: Context, apkFile: File) {
         try {
-            // Verify file exists before attempting installation
-            if (!apkFile.exists()) {
-                Timber.e("APK file does not exist: ${apkFile.absolutePath}")
-                return
-            }
-
-            Timber.i("Installing APK from: ${apkFile.absolutePath}, size: ${apkFile.length()} bytes")
-
             val uri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                // Use FileProvider for Android 7.0+
-                try {
-                    FileProvider.getUriForFile(
-                        context,
-                        "${BuildConfig.APPLICATION_ID}.fileprovider",
-                        apkFile
-                    )
-                } catch (e: Exception) {
-                    Timber.e(e, "Error getting FileProvider URI")
-                    return
-                }
+                FileProvider.getUriForFile(
+                    context,
+                    "${BuildConfig.APPLICATION_ID}.fileprovider",
+                    apkFile,
+                )
             } else {
-                // Use file:// URI for older versions
                 Uri.fromFile(apkFile)
             }
-
-            Timber.i("FileProvider URI: $uri")
-            Timber.i("File absolute path: ${apkFile.absolutePath}")
-            Timber.i("File exists: ${apkFile.exists()}, size: ${apkFile.length()}")
 
             val intent = Intent(Intent.ACTION_VIEW).apply {
                 setDataAndType(uri, "application/vnd.android.package-archive")
@@ -101,22 +92,19 @@ object UpdateInstaller {
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
 
-            // Grant URI permissions to the package installer
             val resInfoList = context.packageManager.queryIntentActivities(intent, 0)
             for (resolveInfo in resInfoList) {
-                val packageName = resolveInfo.activityInfo.packageName
                 context.grantUriPermission(
-                    packageName,
+                    resolveInfo.activityInfo.packageName,
                     uri,
-                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION,
                 )
             }
 
             context.startActivity(intent)
-            Timber.i("Install intent launched successfully")
+            Timber.i("Install intent launched")
         } catch (e: Exception) {
             Timber.e(e, "Error launching install intent")
         }
     }
 }
-
