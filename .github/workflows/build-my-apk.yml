@@ -61,13 +61,11 @@ jobs:
           grep -n "versionCode =" app/build.gradle.kts
           grep -n "GITHUB_REPO =" app/src/main/java/app/gamenative/utils/UpdateChecker.kt
 
-      - name: Create empty local.properties
+      - name: Inject dummy credentials
         run: |
           cat <<EOF > local.properties
-          POSTHOG_API_KEY=
-          POSTHOG_HOST=
-          STEAMGRIDDB_API_KEY=
-          CLOUD_PROJECT_NUMBER=
+          POSTHOG_API_KEY=dummy
+          POSTHOG_HOST=https://us.i.posthog.com
           EOF
 
       - name: Install Android SDK Build Tools
