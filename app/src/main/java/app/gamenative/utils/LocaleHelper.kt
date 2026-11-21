@@ -15,7 +15,7 @@ object LocaleHelper {
      * Only includes languages that have actual string resource files.
      */
     val SUPPORTED_LANGUAGES = linkedMapOf(
-        "" to "System Default",
+        "" to "Mặc định hệ thống",
         "da" to "Dansk (Danish)",
         "de" to "Deutsch",
         "en" to "English",
@@ -30,6 +30,7 @@ object LocaleHelper {
         "ru" to "Русский",
         "tr" to "Türkçe",
         "uk" to "Українська",
+        "vi" to "Tiếng Việt",
         "zh-CN" to "简体中文",
         "zh-TW" to "正體中文"
     )

@@ -116,6 +116,7 @@ android {
             "tr",      // Turkish
             "ko",      // Korean
             "ja",      // Japanese
+            "vi",      // Vietnamese
             // TODO: Add more languages here using the ISO 639-1 locale code with regional qualifiers (e.g., "pt-rPT" for European Portuguese)
         )
 
