@@ -34,6 +34,8 @@ fun SettingsGroupInfo() {
             onDismissRequest = { showLibrariesDialog = false },
         )
 
+        ManualUpdateSettingsItem()
+
         if (!Membership.isMember()) {
             SettingsMenuLink(
                 colors = settingsTileColors(),
